@@ -79,7 +79,7 @@ end
 -- Manhattan distance with column and row, weighted on x so that results are more packed on y.
 local function manh_dist(a, b, x_bias)
   local bias = x_bias or 10
-  return bias * math.abs(b[1] - a[1]) + math.abs(b[2] - a[2])
+  return math.abs(b[1] - a[1] + 1) * math.abs(b[2] - a[2])
 end
 
 -- Mark the current line with hints for the given hint mode.
