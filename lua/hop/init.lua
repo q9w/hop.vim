@@ -3,14 +3,6 @@ local hint = require'hop.hint'
 
 local M = {}
 
-M.opts = defaults
-
--- Setup user settings.
-function M.setup(opts)
-  -- Look up keys in user-defined table with fallback to defaults.
-  M.opts = setmetatable(opts, {__index = defaults})
-end
-
 -- Allows to override global options with user local overrides.
 local function get_command_opts(local_opts)
   -- In case, local opts are defined, chain opts lookup: [user_local] -> [user_global] -> [default]
@@ -142,7 +134,7 @@ local function hint_with(hint_mode, opts)
       local key_str = vim.fn.nr2char(key)
       if opts.keys:find(key_str, 1, true) then
         -- If this is a key used in hop (via opts.keys), deal with it in hop
-        h = M.refine_hints(0, vim.fn.nr2char(key), opts.teasing)
+        h = M.refine_hints(0, key_str, opts.teasing)
         vim.cmd('redraw')
       else
         -- If it's not, quit hop and use the key like normal instead
@@ -238,9 +230,19 @@ function M.hint_lines(opts)
   hint_with(hint.by_line_start, get_command_opts(opts))
 end
 
--- Insert the highlights and register the autocommand.
-local highlight = require'hop.highlight'
-highlight.insert_highlights()
-highlight.create_autocmd()
+-- Setup user settings.
+M.opts = defaults
+function M.setup(opts)
+  -- Look up keys in user-defined table with fallback to defaults.
+  M.opts = setmetatable(opts, {__index = defaults})
+
+  -- Insert the highlights and register the autocommand if asked to.
+  local highlight = require'hop.highlight'
+  highlight.insert_highlights()
+
+  if opts.create_hl_autocmd then
+    highlight.create_autocmd()
+  end
+end
 
 return M
