@@ -59,6 +59,27 @@ Neovim-0.5.
 ==============================================================================
 USAGE                                                                *hop-usage*
 
+Before doing anything else, you have to setup the plugin. If you are not using
+a package manager or environment doing that automatically for you, you need to
+call the |hop.setup| function to correctly initialize the plugin.
+
+For a minimal setup:
+
+    For people using init.lua~
+        In your `init.lua`, add:
+>
+            require'hop'.setup()
+<
+    For people using init.vim~
+        In your `init.vim`, add:
+>
+            lua << EOF
+            require'hop'.setup()
+            EOF
+<
+You can pass an optional argument to `setup(opts)` in order to pass {opts}.
+Have a look at |hop.setup| for further details.
+
                                                                   *hop-commands*
 Commands~
 
@@ -73,7 +94,7 @@ the buffer before and after the cursor, respectively.
 `:HopWord`                                                              *:HopWord*
 `:HopWordBC`                                                          *:HopWordBC*
 `:HopWordAC`                                                          *:HopWordAC*
-    Annotate all words in the current window with key sequences. Typing a
+    Annotate all |word|s in the current window with key sequences. Typing a
     first  key will visually filter the sequences and reduce them. Continue
     typing key sequences until you reduce a sequence completely, which will
     bring your cursor at that position.
@@ -85,7 +106,8 @@ the buffer before and after the cursor, respectively.
 `:HopPatternAC`                                                    *:HopPatternAC*
     Ask the user for a pattern and hint the document with it.
 
-    This is akin to calling the |hop.hint_patterns| Lua function.
+    This is akin to calling the |hop.hint_patterns| Lua function
+    with no explicit pattern.
 
 `:HopChar1`                                                            *:HopChar1*
 `:HopChar1BC`                                                        *:HopChar1BC*
@@ -107,6 +129,14 @@ the buffer before and after the cursor, respectively.
     Jump to the beginning of the line of your choice inside your buffer.
 
     This is akin to calling the |hop.hint_lines| Lua function.
+
+`:HopLineStart`                                                    *:HopLineStart*
+`:HopLineStartBC`                                                *:HopLineStartBC*
+`:HopLineStartAC`                                                *:HopLineStartAC*
+    Like `HopLine` but skips leading whitespace on every line.
+    Blank lines are skipped over.
+
+    This is akin to calling the |hop.hint_lines_skip_whitespace| Lua function.
 
                                                                    *hop-lua-api*
 Lua API~
@@ -152,12 +182,13 @@ Most of the functions and values you need to know about are in `hop`.
     Arguments:~
         {opts}  Hop options.
 
-`hop.hint_patterns(`{opts}`)`                                    *hop.hint_patterns*
-    Annotate all patterns in the current window with key sequences after
-    having prompted the user for the pattern to search.
+`hop.hint_patterns(`{opts}`,` {pattern}`)`                         *hop.hint_patterns*
+    Annotate all matched patterns in the current window with key sequences.
 
     Arguments:~
-        {opts}  Hop options.
+        {opts}     Hop options.
+        {pattern}  (optional) The pattern to search for.
+                   If not set, the user is prompted for the pattern to search.
 
 `hop.hint_char1(`{opts}`)`                                          *hop.hint_char1*
     Let the user type a key and immediately hint all of its occurrences.
@@ -415,6 +446,31 @@ below.
 
     Defaults:~
         `keys = 'asdghklqwertyuiopzxcvbnmfj'`
+
+`quit_key`                                                   *hop-config-quit_key*
+    A string representing a key that will quit Hop mode without also feeding
+    that key into Neovim to be treated as a normal key press.
+
+    It is possible to quit hopping by pressing any key that is not present in
+    |hop-config-keys|; however, when you do this, the keys normal function is
+    also performed. For example if, hopping in |visual-mode|, pressing <Esc> will
+    quit hopping and also exit |visual-mode|.
+
+    If the user presses `quit_key`, Hop will be quit without the keys normal
+    function being performed. For example if hopping in |visual-mode| with
+    `quit_key` set to '<Esc>', pressing <Esc> will quit hopping without
+    quitting |visual-mode|.
+
+    If you don't want to use a `quit_key`, set `quit_key` to an empty string.
+
+    Note:~
+        `quit_key` should only contain a single key or be an empty string.
+    Note:~
+        `quit_key` should not contain a key that is also present in
+        |hop-config-keys|.
+
+    Defaults:~
+        `quit_key = '<Esc>'`
 
 `perm_method`                                             *hop-config-perm_method*
     Permutation method to use.

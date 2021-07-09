@@ -49,26 +49,10 @@ local function grey_things_out(buf_handle, hl_ns, top_line, bottom_line, directi
   end
 end
 
--- Cleanup Hop highlights and unmark the buffer.
-local function unhl_and_unmark(buf_handle, hl_ns)
-  clear_namespace(buf_handle, hl_ns)
-  vim.api.nvim_buf_del_var(buf_handle, 'hop#marked')
-end
-
 -- Hint the whole visible part of the buffer.
 --
 -- The 'hint_mode' argument is the mode to use to hint the buffer.
 local function hint_with(hint_mode, opts)
-  -- first, we ensure we’re not already hopping around; if not, we mark the current buffer (this mark will be removed
-  -- when a jump is performed or if the user stops hopping)
-  -- abort if we’re already hopping
-  if vim.b['hop#marked'] then
-    eprintln('eh, don’t open hop from within hop, that’s super dangerous!', opts.teasing)
-    return
-  end
-
-  vim.api.nvim_buf_set_var(0, 'hop#marked', true)
-
   -- get a bunch of information about the window and the cursor
   local win_info = vim.fn.getwininfo(vim.api.nvim_get_current_win())[1]
   local win_view = vim.fn.winsaveview()
@@ -123,14 +107,14 @@ local function hint_with(hint_mode, opts)
   local h = nil
   if hint_counts == 0 then
     eprintln(' -> there’s no such thing we can see…', opts.teasing)
-    unhl_and_unmark(0, hl_ns)
+    clear_namespace(0, hl_ns)
     return
   elseif opts.jump_on_sole_occurrence and hint_counts == 1 then
     -- search the hint and jump to it
     for _, line_hints in pairs(hints) do
       if #line_hints.hints == 1 then
         h = line_hints.hints[1]
-        unhl_and_unmark(0, hl_ns)
+        clear_namespace(0, hl_ns)
         vim.api.nvim_win_set_cursor(0, { h.line + 1, h.col - 1})
         break
       end
@@ -139,12 +123,12 @@ local function hint_with(hint_mode, opts)
     return
   end
 
-  vim.api.nvim_buf_set_var(0, 'hop#hint_state', {
+  local hint_state = {
     hints = hints;
     hl_ns = hl_ns;
     top_line = top_line;
     bot_line = bot_line
-  })
+  }
 
   hint.set_hint_extmarks(hl_ns, hints)
   vim.cmd('redraw')
@@ -152,28 +136,35 @@ local function hint_with(hint_mode, opts)
   while h == nil do
     local ok, key = pcall(vim.fn.getchar)
     if not ok then
-      M.quit(0)
+      M.quit(0, hl_ns)
       break
     end
+    local not_special_key = true
     -- :h getchar(): "If the result of expr is a single character, it returns a
-    -- number. Use nr2char() to convert it to a String."
+    -- number. Use nr2char() to convert it to a String." Also the result is a
+    -- special key if it's a string and its first byte is 128.
     --
     -- Note of caution: Even though the result of `getchar()` might be a single
     -- character, that character might still be multiple bytes.
     if type(key) == 'number' then
-      local key_str = vim.fn.nr2char(key)
-      if opts.keys:find(key_str, 1, true) then
-        -- If this is a key used in hop (via opts.keys), deal with it in hop
-        h = M.refine_hints(0, key_str, opts.teasing, direction_mode)
-        vim.cmd('redraw')
-      else
-        -- If it's not, quit hop and use the key like normal instead
-        M.quit(0)
-        -- Pass the key captured via getchar() through to nvim, to be handled
-        -- normally (including mappings)
-        vim.api.nvim_feedkeys(key_str, '', true)
-        break
+      key = vim.fn.nr2char(key)
+    elseif key:byte() == 128 then
+      not_special_key = false
+    end
+
+    if not_special_key and opts.keys:find(key, 1, true) then
+      -- If this is a key used in hop (via opts.keys), deal with it in hop
+      h = M.refine_hints(0, key, opts.teasing, direction_mode, hint_state)
+      vim.cmd('redraw')
+    else
+      -- If it's not, quit hop
+      M.quit(0, hl_ns)
+      -- If the key captured via getchar() is not the quit_key, pass it through
+      -- to nvim to be handled normally (including mappings)
+      if key ~= vim.api.nvim_replace_termcodes(opts.quit_key, true, false, true) then
+        vim.api.nvim_feedkeys(key, '', true)
       end
+      break
     end
   end
 end
@@ -182,8 +173,7 @@ end
 --
 -- Refining hints allows to advance the state machine by one step. If a terminal step is reached, this function jumps to
 -- the location. Otherwise, it stores the new state machine.
-function M.refine_hints(buf_handle, key, teasing, direction_mode)
-  local hint_state = vim.api.nvim_buf_get_var(buf_handle, 'hop#hint_state')
+function M.refine_hints(buf_handle, key, teasing, direction_mode, hint_state)
   local h, hints, update_count = hint.reduce_hints_lines(hint_state.hints, key)
 
   if h == nil then
@@ -193,13 +183,12 @@ function M.refine_hints(buf_handle, key, teasing, direction_mode)
     end
 
     hint_state.hints = hints
-    vim.api.nvim_buf_set_var(buf_handle, 'hop#hint_state', hint_state)
 
     grey_things_out(buf_handle, hint_state.hl_ns, hint_state.top_line, hint_state.bot_line, direction_mode)
     hint.set_hint_extmarks(hint_state.hl_ns, hints)
     vim.cmd('redraw')
   else
-    M.quit(buf_handle)
+    M.quit(buf_handle, hint_state.hl_ns)
 
     -- prior to jump, register the current position into the jump list
     vim.cmd("normal! m'")
@@ -213,23 +202,27 @@ end
 -- Quit Hop and delete its resources.
 --
 -- This works only if the current buffer is Hop one.
-function M.quit(buf_handle)
-  local hint_state = vim.api.nvim_buf_get_var(buf_handle, 'hop#hint_state')
-  unhl_and_unmark(buf_handle, hint_state.hl_ns)
+function M.quit(buf_handle, hl_ns)
+  clear_namespace(buf_handle, hl_ns)
 end
 
 function M.hint_words(opts)
   hint_with(hint.by_word_start, get_command_opts(opts))
 end
 
-function M.hint_patterns(opts)
+function M.hint_patterns(opts, pattern)
   opts = get_command_opts(opts)
 
-  vim.fn.inputsave()
-  local ok, pat = pcall(vim.fn.input, 'Search: ')
-  vim.fn.inputrestore()
-
-  if not ok then return end
+  -- The pattern to search is either retrieved from the (optional) argument
+  -- or directly from user input.
+  if pattern then
+    pat = pattern
+  else
+    vim.fn.inputsave()
+    ok, pat = pcall(vim.fn.input, 'Search: ')
+    vim.fn.inputrestore()
+    if not ok then return end
+  end
 
   if #pat == 0 then
     eprintln('-> empty pattern', opts.teasing)
@@ -258,6 +251,10 @@ end
 
 function M.hint_lines(opts)
   hint_with(hint.by_line_start, get_command_opts(opts))
+end
+
+function M.hint_lines_skip_whitespace(opts)
+  hint_with(hint.by_line_start_skip_whitespace(), get_command_opts(opts))
 end
 
 -- Setup user settings.
